@@ -1,113 +1,263 @@
-🎬 AI Video Storage Automation (OpenAI + Google Drive + Google Sheets)
+# **Sora API YouTube Shorts Uploader**
 
-This project automates the process of storing AI-generated videos in Google Drive and logging their metadata in Google Sheets — including clickable links that let you watch each video directly from the sheet.
+### *Automated TikTok → YouTube Shorts Upload System Using n8n, Google APIs, and a Custom Frontend*
 
-Built with n8n, OpenAI’s Video API, and Google APIs, this system provides a lightweight, no-code backend for managing video generation pipelines.
+This project is an end-to-end automation pipeline that:
 
-🚀 Features
+1. **Generates an AI video using OpenAI’s Sora API** (or any video generation endpoint you connect)
+2. **Uploads the video to your Google Drive**
+3. **Logs metadata to Google Sheets**
+4. **Downloads the video for re-upload**
+5. **Automatically uploads the video to your YouTube Shorts channel**
+6. **Provides a custom frontend with buttons to trigger workflows & navigate to essential pages**
 
-🧠 Generates or retrieves video files via OpenAI’s API
+---
 
-☁️ Automatically uploads each video to Google Drive using OAuth 2.0
+# 🚀 **How the Backend Works (n8n Workflow)**
 
-📊 Logs detailed metadata to Google Sheets (title, description, duration, date, etc.)
+Below is a breakdown of every node **exactly as they appear in the screenshot** and what each one does.
 
-🔗 Creates clickable Google Drive links for instant playback in the spreadsheet
+## **🔴 1. Webhook**
 
-⚙️ Fully automated with n8n — no manual uploading or copy-pasting
+* **Purpose:** Starts the entire workflow when your frontend sends the prompt.
+* **Triggered by:** Clicking the *lightbulb → “Run Workflow”* button on the frontend.
+* **Output:** Receives the prompt text from your website.
 
-🧩 Architecture Overview
-OpenAI (Video Generation)
-        ↓
-HTTP Request Node (Fetch video)
-        ↓
-Google Drive Node (Upload via OAuth)
-        ↓
-Google Sheets Node (Log metadata)
+---
 
-🧠 How It Works
+## **🌐 2. HTTP Request (Sora Prompt)**
 
-OpenAI Video Retrieval
-The workflow starts by sending an HTTP Request to OpenAI’s video endpoint:
+* **Purpose:** Sends the user’s prompt to the **OpenAI Sora API** to start generating the video.
+* **Input:** The prompt from the Webhook.
+* **Output:** Returns a `run_id` from Sora.
 
-https://api.openai.com/v1/videos
+---
 
+## **🌐 3. HTTP Request1 (Polling Sora for Completion)**
 
-This returns the video file and metadata (ID, duration, title, etc.).
+* **Purpose:** Every ~15 seconds, this node checks if Sora finished generating the video.
+* **Logic:**
 
-Google Drive Upload
-The video is uploaded directly to your personal Google Drive using OAuth 2.0 credentials (not a service account).
+  * If `status != "completed"`, loop back into itself (via the IF node).
+  * When `status == "completed"`, continue forward.
 
-Files are stored in a designated folder (e.g., Sora)
+---
 
-Each upload returns a shareable link for playback
+## **⏱️ 4. Wait**
 
-Google Sheets Logging
-Once uploaded, the metadata and Google Drive link are automatically appended as a new row in your Google Sheet, making it easy to track, filter, and organize your generated videos.
+* **Purpose:** Creates a 15-second delay between each poll.
+* **Connected between:** `HTTP Request1` → `Wait` → back to `HTTP Request1`.
 
-Playback in Sheets
-Each Drive link in the sheet opens the playable video directly in Drive — no download required.
+---
 
-⚙️ Setup Guide
-1. Prerequisites
+## **📥 5. HTTP Request2 (Download Sora Video URL)**
 
-A Google account
+* **Purpose:** After Sora finishes, this node fetches the **actual file URL**.
 
-n8n installed (locally or hosted)
-n8n Installation Guide
+---
 
-An OpenAI API key
+## **📤 6. Upload File (Google Drive)**
 
-A Google Cloud Project with:
+* **Requires:**
 
-Drive API enabled
+  * **Google OAuth2 credentials**
+  * **Google Drive API enabled** in Google Cloud Console
+* **Purpose:** Uploads the downloaded Sora video to your Google Drive folder.
+* **Output:** Produces a `webViewLink` (used later for Sheets + YouTube).
 
-Sheets API enabled
+---
 
-OAuth 2.0 Client ID created
+## **🔧 7. Code Node (Formatting Metadata)**
 
-2. Connect Your Credentials
+Your current code (unchanged):
 
-In n8n, go to:
-Credentials → Create New → Google Drive (OAuth2)
+```js
+const soraData = $items("HTTP Request1")[0].json;
 
-Enter your OAuth Client ID and Secret from the Google Cloud Console.
+return [
+  {
+    json: {
+      Title: soraData.prompt || soraData.input?.prompt || "No prompt found",
+      Date: new Date().toLocaleString(),
+      Video_Link: $json.webViewLink || $json.data?.webViewLink || "No link found"
+    }
+  }
+];
+```
 
-Grant access to both Drive and Sheets when prompted.
+**Purpose:**
 
-(Optional) Choose a specific folder (like Sora) for video uploads.
+* Pull prompt + timestamp
+* Grab the Google Drive video link
+* Format everything into a single object for Google Sheets
 
-3. Workflow Steps
-Step	Node Type	Purpose
-1	HTTP Request (OpenAI)	Retrieves or generates a video
-2	Function Node	Formats video metadata
-3	Google Drive Node	Uploads video via OAuth
-4	Google Sheets Node	Logs metadata and clickable link
-4. Example Output in Google Sheets
-Title	Description	Duration	Drive Link	Date
-“Sora Clip 01”	AI-generated scene	00:43	Watch in Drive
-	2025-11-06
-🧰 Tech Stack
+---
 
-n8n – workflow automation
+## **📄 8. Append Row in Sheet (Google Sheets)**
 
-OpenAI API – video generation/retrieval
+* **Requires:**
 
-Google Drive API – secure file storage
+  * **Google Sheets API credentials**
+* **Purpose:** Writes one row to your log spreadsheet:
 
-Google Sheets API – structured logging
+  * Prompt
+  * Date
+  * Video Drive link
 
-🌱 Future Improvements
+---
 
-📺 Add automatic YouTube upload integration
+## **⬇️ 9. Download File (Google Drive)**
 
-📦 Include video tagging and categorization
+* **Purpose:** Downloads the uploaded video from Drive so it can be sent to YouTube.
+* **Input:** The `fileId` from the previous Drive Upload node.
 
-🔍 Integrate analytics or video view tracking
+---
 
-🧠 Optionally store embeddings for content search
+## **📺 10. Upload a video (YouTube)**
 
-🧑‍💻 Author
+* **Requires:**
 
-Justin Lejeune
-Cybersecurity & Software Development @ Penn State
+  * **YouTube Data API OAuth2 credentials**
+  * Your Google Cloud project must have:
+    ✔ YouTube Data API v3 enabled
+    ✔ OAuth client with “YouTube Data API” scopes
+
+* **Purpose:** Uploads the downloaded video as a **YouTube Short**.
+
+* **Important:**
+
+  * You must use a **valid YouTube category ID**.
+  * Shorts use **categoryId = 22 (People & Blogs)**.
+  * Title + description must come from earlier nodes.
+
+* **Example YouTube fields:**
+
+  * **Title:** `Expression → {{$node["Code"].json["Title"]}}`
+  * **Description:** `Check this out! #Shorts #AI #Viral #Short #Funny`
+  * **Tags:** `Shorts,AI,Viral,Short,Funny`
+  * **File:** Binary → `{{$binary.data}}`
+
+---
+
+# ⚙️ **Required API Integrations**
+
+## **1. Google OAuth2**
+
+Enable in Google Cloud:
+
+* Google Drive API
+* Google Sheets API
+* YouTube Data API v3
+
+Then create:
+
+* **OAuth Client ID (Desktop App)**
+* Paste credentials into **n8n → Credentials → Google OAuth2**
+
+---
+
+## **2. Google Sheets API**
+
+* Create a spreadsheet
+* Share with your service account email
+* Connect in n8n via Google Sheets node.
+
+---
+
+## **3. YouTube OAuth (YouTube Data API v3)**
+
+* Must enable **YouTube Data API v3**
+* Scopes needed:
+
+  * `youtube.upload`
+  * `youtube`
+* Select **External** or **Internal** OAuth consent screen
+* Add your Google account as test user
+
+---
+
+# 🎨 **Frontend (index.html UI)**
+
+The frontend is a lightweight static HTML page with a modern full-screen hero design.
+
+**The UI was designed from scratch** (HTML + CSS + tiny bit of JS).
+It includes **six circular icon buttons**, each with a dedicated function.
+
+---
+
+## **🖥️ Buttons & What They Do**
+
+### **💡 Lightbulb Icon — Generate Prompt Ideas**
+
+* Calls a local JS prompt generator using ChatGPT
+* Pops up a list of idea suggestions
+  *(You removed the OpenAI node from the backend to avoid costs — this stays front-end only.)*
+
+---
+
+### **🏀 Basketball Icon — Trigger Workflow**
+
+* Sends the user’s prompt to your n8n webhook
+* Starts the entire Sora → Drive → Sheets → YouTube pipeline
+
+---
+
+### **🐙 GitHub Icon — Open the Project Repo**
+
+* Links to:
+  `https://github.com/justinlej12/Sora-2-API-n8n-Automation`
+
+---
+
+### **📷 Camera Icon — Open YouTube Channel**
+
+* Opens your YouTube channel where the Shorts are uploaded
+
+---
+
+### **📄 Sheets Icon — Open Organizer Sheet**
+
+* Links directly to your Google Sheets log
+* Shows: Prompt, Date, Drive link, etc.
+
+---
+
+### **📁 Google Drive Icon — Open Video Folder**
+
+* Opens the Drive folder where n8n uploads each generated Sora video
+
+---
+
+# 🧩 **How It All Fits Together**
+
+1. You open the **frontend** → click the **Basketball button**
+2. It sends your prompt → **n8n Webhook**
+3. n8n calls **OpenAI Sora** → gets `run_id`
+4. n8n **polls** until the video is done
+5. n8n downloads the video → uploads it to **Google Drive**
+6. n8n logs metadata to **Google Sheets**
+7. n8n uploads the video to **YouTube Shorts**
+8. You can view results via the **YouTube**, **Sheets**, and **Drive** buttons
+
+---
+
+# 🎉 **Result**
+
+Your workflow now:
+
+* Requires **zero manual uploading**
+* Posts **Shorts automatically**
+* Tracks everything
+* Gives you a clean frontend dashboard
+* Has already gotten **2,400+ views and new subs** on YouTube (W 💪)
+
+---
+
+If you want, I can:
+✅ Add thumbnail generation (if you ever want it)
+✅ Add multiple prompts at once
+✅ Add scheduled auto-uploads
+✅ Add analytics tracking from YouTube → Sheets
+
+Just tell me!
+
