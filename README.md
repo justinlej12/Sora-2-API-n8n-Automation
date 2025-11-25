@@ -251,13 +251,4 @@ Your workflow now:
 * Gives you a clean frontend dashboard
 * Has already gotten **2,400+ views and new subs** on YouTube (W 💪)
 
----
-
-If you want, I can:
-✅ Add thumbnail generation (if you ever want it)
-✅ Add multiple prompts at once
-✅ Add scheduled auto-uploads
-✅ Add analytics tracking from YouTube → Sheets
-
-Just tell me!
 
